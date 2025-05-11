@@ -1,16 +1,12 @@
+#include "Arduino.h"
+
 #include "network.h"
 #include "serial.h"
 #include "config.h"
 #include "pins.h"
 #include "sdControl.h"
-#include <DNSServer.h>
 #include <SPIFFS.h>
-
-#if defined(ARDUINO) && ARDUINO >= 100
-    #include "Arduino.h"
-#else
-    #include "WProgram.h"
-#endif
+#include <ArduinoOTA.h>
 
 #ifdef ESP32
   #include <WiFi.h>
@@ -18,22 +14,13 @@
   #include <ESP8266WiFi.h>
 #endif
 
-DNSServer dnsServer;
-
 IPAddress AP_local_ip(192, 168, 4, 1);
 IPAddress AP_gateway(192, 168, 4, 1);
 IPAddress AP_subnet(255, 255, 255, 0);  // Subnet
 const char* AP_SSID  = "SD-WIFI-PRO";
 
-String IpAddress2String(const IPAddress& ipAddress)
+int Network::startConnect(String ssid, String psd)
 {
-  return String(ipAddress[0]) + String(".") +\
-  String(ipAddress[1]) + String(".") +\
-  String(ipAddress[2]) + String(".") +\
-  String(ipAddress[3])  ;
-}
-
-int Network::startConnect(String ssid, String psd) {
   if(WiFi.status() == WL_CONNECTED && WiFi.SSID().equals(_ssid.c_str())) {
     return 0; // already connected to the AP
   }
@@ -45,7 +32,8 @@ int Network::startConnect(String ssid, String psd) {
   return 1;
 }
 
-int Network::connect(String ssid, String psd) {
+int Network::connect(String ssid, String psd)
+{
   if(_wifiMode == _stamode && WiFi.status() == WL_CONNECTED && WiFi.SSID().equals(ssid.c_str())) {
     SERIAL_ECHOLN("Aready connected to the AP");
     return 1;
@@ -63,11 +51,13 @@ int Network::connect(String ssid, String psd) {
 
   // Wait for connection
   unsigned int timeout = 0;
-  while(WiFi.status() != WL_CONNECTED) {
+  while(WiFi.status() != WL_CONNECTED)
+  {
     //blink();
     Serial.print(".");
     timeout++;
-    if(timeout++ > WIFI_CONNECT_TIMEOUT/100) {
+    if(timeout++ > WIFI_CONNECT_TIMEOUT/100)
+    {
       Serial.println("");
       wifiConnecting = false;
       Serial.println("Connect fail, please check your SSID and password");
@@ -78,8 +68,6 @@ int Network::connect(String ssid, String psd) {
   }
 
   config.save(ssid.c_str(), psd.c_str());
-  //String sIp = IpAddress2String(WiFi.localIP());
-  //config.save_ip(sIp.c_str());
 
   Serial.println("");
   Serial.print("Connected to "); Serial.println(config.ssid());
@@ -92,7 +80,8 @@ int Network::connect(String ssid, String psd) {
   return 3;
 }
 
-int Network::start() {
+int Network::start()
+{
   if(config.load(&SPIFFS) != 1) { // Not connected before
     // Start the AP
     startSoftAP();
@@ -100,18 +89,21 @@ int Network::start() {
   }
   wifiConnected = false;
   wifiConnecting = true;
-  
+
+  WiFi.hostname(AP_SSID);
   WiFi.mode(WIFI_STA);
   SERIAL_ECHO("Connecting to ");SERIAL_ECHOLN(config.ssid());
   WiFi.begin(config.ssid(), config.password());
 
   // Wait for connection
   unsigned int timeout = 0;
-  while(WiFi.status() != WL_CONNECTED) {
+  while(WiFi.status() != WL_CONNECTED)
+  {
     //blink();
     SERIAL_ECHO(".");
     timeout++;
-    if(timeout++ > WIFI_CONNECT_TIMEOUT/500) {
+    if(timeout++ > WIFI_CONNECT_TIMEOUT/500)
+    {
       SERIAL_ECHOLN("");
       wifiConnecting = false;
       SERIAL_ECHOLN("Connect fail, please check your INI file");
@@ -125,8 +117,6 @@ int Network::start() {
   }
 
   config.save();
-  //String sIp = IpAddress2String(WiFi.localIP());
-  //config.save_ip(sIp.c_str());
 
   SERIAL_ECHOLN("");
   SERIAL_ECHO("Connected to "); SERIAL_ECHOLN(config.ssid());
@@ -136,10 +126,18 @@ int Network::start() {
   wifiConnecting = false;
   _stamode = true;
 
+  ArduinoOTA.setHostname(HOSTNAME);
+  ArduinoOTA.begin();
+  ArduinoOTA.onStart([]() {
+    SERIAL_ECHOLN("OTA started");
+    delay(100);
+  });
+
   return 3;
 }
 
-int Network::status() {
+int Network::status()
+{
   if(wifiConnected) {
     return 3; // connected
   }
@@ -164,6 +162,7 @@ bool Network::isSTAmode() {
 void Network::startSoftAP() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(AP_local_ip, AP_gateway, AP_subnet);
+  WiFi.beginSmartConfig();
   if (WiFi.softAP(AP_SSID))
   {                           
     _stamode = false;
@@ -171,6 +170,7 @@ void Network::startSoftAP() {
     Serial.print("IP address = ");
     Serial.println(WiFi.softAPIP());
     Serial.println(String("MAC address = ")  + WiFi.softAPmacAddress().c_str());
+    Serial.println("Or use EspTouch");
     config.clear();
   } 
   else
@@ -180,15 +180,6 @@ void Network::startSoftAP() {
     Serial.println("restart now...");
     ESP.restart();
   }
-
-  // 	m_apmode = true;
-	// WiFi.mode(WIFI_AP_STA);
-  //   WiFi.persistent(false);
-	// WiFi.softAP(ssid, psk);
-	// /* Setup the DNS server redirecting all the domains to the AP_local_ip */
-	// m_dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
-	// m_dnsServer.start(53, "*", WiFi.softAPIP());
-  //   return WiFi.softAPIP();
 }
 
 void Network::getWiFiList(String &list) {
@@ -225,7 +216,9 @@ void Network::scanWiFi() {
   Serial.println(_wifiList);
 }
 
-void Network::loop() {
+void Network::loop()
+{
+  ArduinoOTA.handle();
   if(_doConnect) {
     connect(_ssid,_psd);
     _doConnect = false;
@@ -234,6 +227,15 @@ void Network::loop() {
   if(_doScan) {
     scanWiFi();
     _doScan = false;
+  }
+
+  if(wifiConnected == false)
+  {
+    if( WiFi.smartConfigDone())
+    {
+      Serial.println("EspTouch complete");
+      connect( WiFi.SSID(), WiFi.psk() );
+    }
   }
 }
 
