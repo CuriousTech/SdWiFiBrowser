@@ -244,11 +244,11 @@ function createFilelistItem(i,type,filename,size) {
                     "<div class=\"media-body tm-bg-gray\">\n" +
                         "<div class=\"tm-description-box\">\n" +
                             "<h5 id=filename class=\"tm-text-blue\">"+filename+"</h5>\n" +
-                            "<p class=\"mb-0\">Type:"+type+" | Size:"+size+" Bytes</p>\n" +
+                            "<p class=\"mb-0\">Type:"+type+" | Size:"+size+"</p>\n" +
                         "</div>\n" +
                         "<div class=\"tm-dd-box\">\n" +
-                            "<input id="+filename+" type=\"button\" value=\"Delete\" class=\"btn tm-bg-blue tm-text-white tm-dd\" onclick=javascript:onClickDelete(id) />" +
-                            "<input id="+filename+" type=\"button\" method=\"GET\" value=\"Download\" class=\"btn tm-bg-blue tm-text-white tm-dd\" onclick=javascript:onClickDownload(id) />" +
+                            "<input id=\""+filename+"\" type=\"button\" value=\"Delete\" class=\"btn tm-bg-blue tm-text-white tm-dd\" onclick=javascript:onClickDelete(id) />" +
+                            "<input id=\""+filename+"\" type=\"button\" method=\"GET\" value=\"Download\" class=\"btn tm-bg-blue tm-text-white tm-dd\" onclick=javascript:onClickDownload(id) />" +
                         "</div>\n" +
                     "</div>\n" +
                 "</div>";
