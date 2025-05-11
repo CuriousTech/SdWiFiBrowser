@@ -114,8 +114,7 @@ void FSWebServer::onHttpWifiStatus(AsyncWebServerRequest *request) {
     case 3:
       IPAddress ip = WiFi.localIP();
       resp += "Connected:";
-      for (int i=0; i<4; i++)
-        resp += i  ? "." + String(ip[i]) : String(ip[i]);
+      resp += ip.toString();
     break;
   }
   request->send(200, "text/plain", resp);
@@ -124,11 +123,11 @@ void FSWebServer::onHttpWifiStatus(AsyncWebServerRequest *request) {
 void FSWebServer::onHttpWifiConnect(AsyncWebServerRequest *request)
 {
   String wifi_ssid,wifi_psd;
+
   if (request->hasArg("ssid"))
   {
     Serial.print("got ssid:");
     wifi_ssid = request->arg("ssid");
- 
     Serial.println(wifi_ssid);
   } 
   else
@@ -146,7 +145,7 @@ void FSWebServer::onHttpWifiConnect(AsyncWebServerRequest *request)
   } 
   else 
   {
-    Serial.println("error, not found password");
+    Serial.println("error, password not found");
     request->send(200, "text/plain", "WIFI:NoPassword");
     return;
   }
@@ -163,8 +162,7 @@ void FSWebServer::onHttpWifiConnect(AsyncWebServerRequest *request)
     String resp = "WIFI:";
     IPAddress ip = WiFi.localIP();
       resp += "AlreadyCon:";
-      for (int i=0; i<4; i++)
-        resp += i  ? "." + String(ip[i]) : String(ip[i]);
+      resp += ip.toString();
     request->send(200, "text/plain", resp);
   }
 
@@ -259,7 +257,7 @@ void FSWebServer::onHttpDownload(AsyncWebServerRequest *request) {
       request->send(500, "text/plain","DOWNLOAD:BADARGS");
       return;
     }
-    AsyncWebParameter* p = request->getParam(0);
+    const AsyncWebParameter* p = request->getParam((uint8_t)0);
     String path = p->value();
 
     AsyncWebServerResponse *response = request->beginResponse(200);
@@ -288,7 +286,7 @@ void FSWebServer::onHttpList(AsyncWebServerRequest * request) {
     request->send(500, "text/plain","LIST:BADARGS");
     return;
   }
-  AsyncWebParameter* p = request->getParam(0);
+  const AsyncWebParameter* p = request->getParam((uint8_t)0);
   String path = p->value();
 
   if (path != "/" && !SD.exists((char *)path.c_str())) {
@@ -305,7 +303,6 @@ void FSWebServer::onHttpList(AsyncWebServerRequest * request) {
     return;
   }
   dir.rewindDirectory();
-  
 
   String output = "[";
   for (int cnt = 0; true; ++cnt) {
@@ -336,15 +333,11 @@ void FSWebServer::onHttpList(AsyncWebServerRequest * request) {
 }
 
 void FSWebServer::onHttpDelete(AsyncWebServerRequest *request) {
-  switch(sdcontrol.canWeTakeControl())
+  if(sdcontrol.canWeTakeControl()== -1)
   { 
-    case -1: {
-      DEBUG_LOG("Printer controlling the SD card"); 
-      request->send(500, "text/plain","DELETE:SDBUSY");
-    }
+    DEBUG_LOG("Printer controlling the SD card"); 
+    request->send(500, "text/plain","DELETE:SDBUSY");
     return;
-  
-    default: break;
   }
 
   Serial.println("onHttpDelete");
@@ -353,8 +346,8 @@ void FSWebServer::onHttpDelete(AsyncWebServerRequest *request) {
     Serial.println("no path arg");
   } 
   else {
-    AsyncWebParameter* p = request->getParam(0);
-    String path = "/"+p->value();
+    const AsyncWebParameter* p = request->getParam((uint8_t)0);
+    String path = "/" + request->urlDecode(p->value());
     Serial.print("path:");
     Serial.println(path);
 
@@ -373,37 +366,32 @@ void FSWebServer::onHttpDelete(AsyncWebServerRequest *request) {
 }
 
 void FSWebServer::onHttpFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
-  static File uploadFile;
 
   if (request->url() != "/upload") {
-    DEBUG_LOG("Upload bad args"); 
+    DEBUG_LOG("Upload bad args");
     request->send(500, "text/plain","UPLOAD:BADARGS");
     return;
   }
 
-  switch(sdcontrol.canWeTakeControl())
-  { 
-    case -1: {
-      DEBUG_LOG("Printer controlling the SD card\n"); 
-      request->send(500, "text/plain","UPLOAD:SDBUSY");
-    }
+  if(sdcontrol.canWeTakeControl() == -1)
+  {
+    DEBUG_LOG("Printer controlling the SD card\n"); 
+    request->send(500, "text/plain","UPLOAD:SDBUSY");
     return;
-
-    default: break;
   }
 
   if (!index) { // start
     sdcontrol.takeControl();
-    if(uploadFile){
-        uploadFile.close();
+    if(request->_tempFile){
+        request->_tempFile.close();
     }
 
     if (SD.exists((char *)filename.c_str())) {
       SD.remove((char *)filename.c_str());
     }
 
-    uploadFile = SD.open(filename.c_str(), FILE_WRITE);
-    if(!uploadFile) {
+    request->_tempFile = SD.open(filename.c_str(), FILE_WRITE);
+    if(!request->_tempFile) {
       request->send(500, "text/plain", "UPLOAD:OPENFAILED");
       sdcontrol.relinquishControl();
       DEBUG_LOG("Upload: Open file failed: %s \n",filename.c_str());
@@ -413,18 +401,17 @@ void FSWebServer::onHttpFileUpload(AsyncWebServerRequest *request, String filena
   } 
 
   if (len) { // Continue
-    if(len != uploadFile.write(data, len)){
+    if(len != request->_tempFile.write(data, len)){
       DEBUG_LOG("Upload: write error\n");  
     }
     DEBUG_LOG("Upload: written: %d bytes\n",len);
   }
 
   if (final) {  // End
-    if (uploadFile) {
-      uploadFile.close();
+    if (request->_tempFile) {
+      request->_tempFile.close();
     }
     DEBUG_LOG("Upload End\n");
     sdcontrol.relinquishControl();
   }
 }
-
