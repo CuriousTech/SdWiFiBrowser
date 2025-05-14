@@ -1,17 +1,21 @@
-#include <SPI.h>
 #include <EEPROM.h>
 #include "pins.h"
 #include "config.h"
 #include "serial.h"
+#include "SD.h"
+#include "sdcontrol.h"
 
 int Config::loadFS() {
-  SERIAL_ECHOLN("Going to load config from INI file");
+  SERIAL_ECHOLN("Going to load config from SDCard SETUP.INI file");
 
-  File file = _fs->open(CONFIG_FILE, "r");
-	if (!file) {
-		SERIAL_ECHOLN("Failed to open config file");
-		return -1;
-	}
+  sdcontrol.takeControl();
+
+  File file = SD.open(CONFIG_FILE, "r");
+  if (!file) {
+    SERIAL_ECHOLN("Failed to open config file");
+    sdcontrol.relinquishControl();
+    return 1;
+  }
 
   // Get SSID and PASSWORD from file
   int rst = 0,step = 0;
@@ -51,14 +55,14 @@ int Config::loadFS() {
     else continue; // Bad line
   }
   if(step != 2) { // We miss ssid or password
-    //memset(data,) // TODO: do we need to empty the data?
     SERIAL_ECHOLN("Please check your SSDI or PASSWORD in ini file");
     rst = -4;
     goto FAIL;
   }
 
-  FAIL:
+FAIL:
   file.close();
+  sdcontrol.relinquishControl();
 
   return rst;
 }
