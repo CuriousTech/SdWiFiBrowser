@@ -47,12 +47,20 @@ Config SD WIFI PRO WiFi at wifi.htm page.
 Input the right network ssid and password ,click the "Connect" button can 
 let the SD WIFI PRO connect to a WiFi network.
 Click "Go to AP mode", can change SD WIFI PRO into AP mode.
-
-### Building 
-The 0.x release use Arduino to compile.
+  
+### Building  
+The 0.x release use Arduino to compile.  
     
 Note:the SD WIFI PRO use AsyncTCP and ESPAsyncWebServer.  
-AsyncTCP: https://github.com/dvarrel/AsyncTCP
-ESPAsyncWebServer: https://github.com/me-no-dev/ESPAsyncWebServer
-
-    
+AsyncTCP: https://github.com/dvarrel/AsyncTCP  
+ESPAsyncWebServer: https://github.com/ESP32Async/ESPAsyncWebServer (newer version)  
+  
+### Additional notes (CuriousTech):  
+How to flash: Set both switches in the ON position, and jumper IO0 to GND, then plug it in or reset, then remove the jumper.  
+![Board](howtoflash.jpg)  
+For building, I used Arduino IDE, and ESP32 2.0.14, board is ESP32-PICO-D4 and default partition  
+Changes in this fork:  
+SETUP.INI is read from the SDCard, not internal SPIFFS  
+Filenames with spaces can be deleted and downloaded  
+Added ArduinoOTA for updates  
+Added EspTouch support but not tested  
