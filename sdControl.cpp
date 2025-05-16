@@ -94,8 +94,8 @@ int SDControl::canWeTakeControl() {
 	if(_weTookBus) return 0;
 
 	if(millis() < _spiBlockoutTime) {
-		SERIAL_ECHOPAIR("Blocking:",_spiBlockoutTime);
-		SERIAL_ECHOLNPAIR(",", millis());
+//		SERIAL_ECHOPAIR("Blocking:",_spiBlockoutTime);
+//		SERIAL_ECHOLNPAIR(",", millis());
 		return -1;
 	}
 	return 0;
@@ -109,18 +109,30 @@ bool SDControl::printerRequest() {
 	return _printerRequest;
 }
 
-void SDControl::deleteFile(String path)
+bool SDControl::deleteFile(String path)
 {
   File file = SD.open((char *)path.c_str());
   if(!file) {
     DEBUG_LOG("Open file fail\n");
-    return;
+    return false;
   }
   if (!file.isDirectory()) 
   {
     file.close();
     SD.remove((char *)path.c_str());
   }
+  else
+  {
+    file.close();
+    return false;
+  }
+  return true;
+}
+
+uint32_t SDControl::getDiskFree()
+{
+  uint64_t free = SD.totalBytes() - SD.usedBytes();
+  return (uint32_t)(free >> 10);
 }
 
 SDControl sdcontrol;
