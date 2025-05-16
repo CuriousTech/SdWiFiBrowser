@@ -24,7 +24,6 @@
 #define __SERIAL_H__
 
 #include <HardwareSerial.h>
-#include "macros.h"
 
 #define MYSERIAL0 Serial
 
