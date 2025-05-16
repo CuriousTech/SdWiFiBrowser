@@ -5,31 +5,197 @@
 #include <StreamString.h>
 #include "serial.h"
 #include "network.h"
-#include "config.h"
-
-const char* PARAM_MESSAGE = "message";
-uint8_t printer_sd_type = 0;
+#include "jsonParse.h"
+#include "jsonString.h"
 
 FSWebServer server(80);
+AsyncWebSocket ws("/ws");
 
 FSWebServer::FSWebServer(uint16_t port) : AsyncWebServer(port) {}
 
-void FSWebServer::begin(FS* fs) {
-    _fs = fs;
+JsonParse jsonParse;
+String ssid;
 
+void wsTime(int32_t nValue, char *pszValue)
+{
+  timeval tv;
+  tv.tv_sec = nValue;
+  settimeofday(&tv, NULL);
+  Serial.println("setTime");
+}
+
+void wsRelinquish(int32_t nValue, char *pszValue)
+{
+  sdcontrol.relinquishControl();
+}
+
+void wsList(int32_t nValue, char *pszValue)
+{
+  if(sdcontrol.canWeTakeControl() == -1){
+    server.sendAlert("Printer controlling the SD card");
+    return;
+  }
+
+  if ( (pszValue[0] == '/' && pszValue[1] == 0 ) == false && SD.exists(pszValue) == false) {
+    Serial.print("dir not found: ");
+    Serial.println(pszValue);
+    return;
+  }
+
+  sdcontrol.takeControl();
+  File dir = SD.open(pszValue);
+  if (!dir.isDirectory()) {
+    dir.close();
+    Serial.println("path not directory");
+    return;
+  }
+  dir.rewindDirectory();
+
+  String output = "{\"type\":\"filelist\",\"value\":[";
+  for (int cnt = 0; true; ++cnt) {
+    File entry = dir.openNextFile();
+    if (!entry)
+      break;
+    if (cnt > 0)
+      output += ',';
+    jsonString jsList;
+    jsList.Var("type", (entry.isDirectory()) ? "dir" : "file");
+    jsList.Var("name", entry.name() );
+    jsList.Var("size", entry.size() );
+    output += jsList.Close();
+    entry.close();
+  }
+  output += "]}";
+  dir.close();
+  sdcontrol.relinquishControl();
+  ws.textAll( output );
+}
+
+void wsDelete(int32_t nValue, char *pszValue)
+{
+  Serial.print("Delete: ");
+  Serial.println(pszValue);
+  if(sdcontrol.canWeTakeControl()== -1)
+  {
+    server.sendAlert("Printer controlling the SD card");
+    return;
+  }
+
+  sdcontrol.takeControl();
+  if( (pszValue[0] == '/' && pszValue[1] == 0) || !SD.exists(pszValue) )
+  {
+    server.sendAlert("File not found");
+    return;
+  }
+  if(!sdcontrol.deleteFile(pszValue))
+    server.sendAlert("Could not delete file");
+
+  server._diskFree = sdcontrol.getDiskFree();
+  sdcontrol.relinquishControl();
+}
+
+void wsStartSoftAP(int32_t nValue, char *pszValue)
+{
+  Serial.println("wsSetSoftAP");
+  if(network.isSTAmode())
+    network.startSoftAP();
+}
+
+void wsSetSSID(int32_t nValue, char *pszValue)
+{
+  ssid = pszValue;
+}
+
+void wsSetPWD(int32_t nValue, char *pszValue)
+{
+  network.startConnect(ssid, pszValue);
+}
+
+void wsScan(int32_t nValue, char *pszValue)
+{
+  network.doScan();
+}
+
+jsCbFunc jsonFuncs[]{
+  {"time", wsTime},
+  {"relinquish", wsRelinquish},
+  {"list", wsList},
+  {"delete", wsDelete},
+  {"startSoftAP", wsStartSoftAP},
+  {"SSID", wsSetSSID},
+  {"PWD", wsSetPWD},
+  {"scan", wsScan},
+  {"", NULL}
+};
+
+void FSWebServer::onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
+{ //Handle WebSocket event
+
+  switch (type)
+  {
+    case WS_EVT_CONNECT:      //client connected
+//      client->text( stuff );
+      break;
+    case WS_EVT_DISCONNECT:    //client disconnected
+      break;
+    case WS_EVT_ERROR:    //error was received from the other end
+      break;
+    case WS_EVT_PONG:    //pong message was received (in response to a ping request maybe)
+      break;
+    case WS_EVT_DATA:  //data packet
+      AwsFrameInfo * info = (AwsFrameInfo*)arg;
+      if (info->final && info->index == 0 && info->len == len) {
+        //the whole message is in a single frame and we got all of it's data
+        if (info->opcode == WS_TEXT) {
+          data[len] = 0;
+          jsonParse.process((char *)data, jsonFuncs);
+        }
+      }
+      break;
+  }
+}
+
+void FSWebServer::sendAlert(String s) {
+    jsonString js;
+    js.Var("type", "alert");
+    js.Var("value", s);
+    ws.textAll(js.Close());
+}
+
+void FSWebServer::loop() {
+  static uint32_t tm;
+
+  if(millis() - tm > 1000) // 1 second keepAlive
+  {
+    tm = millis();
+    jsonString js;
+    js.Var("type", "info");
+    js.Var("sdfree", _diskFree);
+    js.Var("intfree", (SPIFFS.totalBytes() - SPIFFS.usedBytes()) >> 10 );
+    js.Var("wifiStatus", network.status() );
+    js.Var("ip", WiFi.localIP().toString() );
+    ws.textAll(js.Close());
+
+    if(network.hasScan())
+    {
+      String s;
+      network.getWiFiList(s);
+      ws.textAll(s);
+    }
+  }
+}
+
+void FSWebServer::begin() {
+
+    sdcontrol.takeControl();
+    _diskFree = sdcontrol.getDiskFree();
+    sdcontrol.relinquishControl();
+
+    ws.onEvent([this](AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len){
+      this->onWsEvent(server, client, type, arg, data, len);
+    });
+    server.addHandler(&ws);
     AsyncWebServer::begin();
-
-    server.on("/relinquish", HTTP_GET, [this](AsyncWebServerRequest *request) {
-  		this->onHttpRelinquish(request);
-  	});
-
-    server.on("/list", HTTP_GET, [this](AsyncWebServerRequest *request) {
-  		this->onHttpList(request);
-  	});
-
-    server.on("/delete", HTTP_GET, [this](AsyncWebServerRequest *request) {
-  		this->onHttpDelete(request);
-  	});
 
   	server.on("/download", HTTP_GET, [this](AsyncWebServerRequest *request) {
   		this->onHttpDownload(request);
@@ -39,26 +205,6 @@ void FSWebServer::begin(FS* fs) {
   	  request->send(200, "text/plain", ""); },[this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
 		  this->onHttpFileUpload(request, filename, index, data, len, final);
 	  });
-
-    server.on("/wifiap", HTTP_POST, [this](AsyncWebServerRequest *request) {
-  		this->onHttpWifiAP(request);
-  	});
-
-    server.on("/wificonnect", HTTP_POST, [this](AsyncWebServerRequest *request) {
-  		this->onHttpWifiConnect(request);
-  	});
-
-    server.on("/wifistatus", HTTP_GET, [this](AsyncWebServerRequest *request) {
-  		this->onHttpWifiStatus(request);
-  	});
-    
-    server.on("/wifiscan", HTTP_GET, [this](AsyncWebServerRequest *request) {
-  		this->onHttpWifiScan(request);
-  	});
-
-    server.on("/wifilist", HTTP_GET, [this](AsyncWebServerRequest *request) {
-  		this->onHttpWifiList(request);
-  	});
 
 	  server.onNotFound([this](AsyncWebServerRequest *request) {
       this->onHttpNotFound(request);
@@ -83,98 +229,6 @@ String getContentType(String filename, AsyncWebServerRequest *request) {
   return "text/plain";
 }
 
-void FSWebServer::onHttpWifiAP(AsyncWebServerRequest *request) {
-  Serial.println("onHttpWifiAP");
-  if(network.isSTAmode()) {
-    request->send(200, "text/plain", "WIFI:StartAPmode");
-    network.startSoftAP();
-  }
-  else {
-    request->send(200, "text/plain", "WIFI:AlreadyAPmode");
-  }
-}
-
-void FSWebServer::onHttpWifiList(AsyncWebServerRequest *request) {
-  String resp;
-  network.getWiFiList(resp);
-  request->send(200, "text/plain", resp);
-}
-
-void FSWebServer::onHttpWifiStatus(AsyncWebServerRequest *request) {
-  DEBUG_LOG("onHttpWifiStatus\n");
-
-  String resp = "WIFI:";
-  switch(network.status()) {
-    case 1:
-      resp += "Failed";
-    break;
-    case 2:
-      resp += "Connecting";
-    break;
-    case 3:
-      IPAddress ip = WiFi.localIP();
-      resp += "Connected:";
-      resp += ip.toString();
-    break;
-  }
-  request->send(200, "text/plain", resp);
-}
-
-void FSWebServer::onHttpWifiConnect(AsyncWebServerRequest *request)
-{
-  String wifi_ssid,wifi_psd;
-
-  if (request->hasArg("ssid"))
-  {
-    Serial.print("got ssid:");
-    wifi_ssid = request->arg("ssid");
-    Serial.println(wifi_ssid);
-  } 
-  else
-  { 
-    Serial.println("error, not found ssid");
-    request->send(200, "text/plain", "WIFI:NoSSID");
-    return;
-  }
-
-  if (request->hasArg("password")) 
-  {
-    Serial.print("got password:");
-    wifi_psd = request->arg("password");
-    Serial.println(wifi_psd);
-  } 
-  else 
-  {
-    Serial.println("error, password not found");
-    request->send(200, "text/plain", "WIFI:NoPassword");
-    return;
-  }
-
-  if(0==wifi_ssid.length() || 0==wifi_psd.length()) {
-     request->send(200, "text/plain", "WIFI:WrongPara");
-     return;
-  }
-
-  if(network.startConnect(wifi_ssid, wifi_psd)) {
-    request->send(200, "text/plain", "WIFI:Starting");
-  }
-  else {
-    String resp = "WIFI:";
-    IPAddress ip = WiFi.localIP();
-      resp += "AlreadyCon:";
-      resp += ip.toString();
-    request->send(200, "text/plain", resp);
-  }
-
-  return;
-}
-
-void FSWebServer::onHttpWifiScan(AsyncWebServerRequest * request) {
-    network.doScan();
-    request->send(200, "text/json", "ok");
-    return;
-}
-
 bool FSWebServer::onHttpNotFound(AsyncWebServerRequest *request) {
   String path = request->url();
 	DEBUG_LOG("handleFileRead: %s\r\n", path.c_str());
@@ -184,12 +238,12 @@ bool FSWebServer::onHttpNotFound(AsyncWebServerRequest *request) {
 
 	String contentType = getContentType(path, request);
 	String pathWithGz = path + ".gz";
-	if (_fs->exists(pathWithGz) || _fs->exists(path)) {
-		if (_fs->exists(pathWithGz)) {
+	if (INTERNAL_FS.exists(pathWithGz) || INTERNAL_FS.exists(path)) {
+		if (INTERNAL_FS.exists(pathWithGz)) {
 			path += ".gz";
 		}
 		DEBUG_LOG("Content type: %s\r\n", contentType.c_str());
-		AsyncWebServerResponse *response = request->beginResponse(*_fs, path, contentType);
+		AsyncWebServerResponse *response = request->beginResponse(INTERNAL_FS, path, contentType);
 		if (path.endsWith(".gz"))
 			response->addHeader("Content-Encoding", "gzip");
 		DEBUG_LOG("File %s exist\r\n", path.c_str());
@@ -232,23 +286,14 @@ bool FSWebServer::handleFileReadSD(String path, AsyncWebServerRequest *request) 
 	return false;
 }
 
-void FSWebServer::onHttpRelinquish(AsyncWebServerRequest *request) {
-    sdcontrol.relinquishControl();
-    request->send(200, "text/plain", "ok");
-}
-
 void FSWebServer::onHttpDownload(AsyncWebServerRequest *request) {
     DEBUG_LOG("onHttpDownload");
 
-    switch(sdcontrol.canWeTakeControl())
-    { 
-      case -1: {
-        DEBUG_LOG("Printer controlling the SD card"); 
-        request->send(500, "text/plain","DOWNLOAD:SDBUSY");
-      }
+    if(sdcontrol.canWeTakeControl() == -1)
+    {
+      DEBUG_LOG("Printer controlling the SD card"); 
+      request->send(500, "text/plain","DOWNLOAD:SDBUSY");
       return;
-    
-      default: break;
     }
   
     int params = request->params();
@@ -268,110 +313,7 @@ void FSWebServer::onHttpDownload(AsyncWebServerRequest *request) {
     delete response; // Free up memory!
 }
 
-void FSWebServer::onHttpList(AsyncWebServerRequest * request) {
-
-  switch(sdcontrol.canWeTakeControl())
-  { 
-    case -1: {
-      DEBUG_LOG("Printer controlling the SD card\n"); 
-      request->send(500, "text/plain","LIST:SDBUSY");
-    }
-    return;
-  
-    default: break;
-  }
-
-  int params = request->params();
-  if (params == 0) {
-    request->send(500, "text/plain","LIST:BADARGS");
-    return;
-  }
-  const AsyncWebParameter* p = request->getParam((uint8_t)0);
-  String path = p->value();
-
-  if (path != "/" && !SD.exists((char *)path.c_str())) {
-    request->send(500, "text/plain","LIST:BADPATH");
-    return;
-  }
-
-  sdcontrol.takeControl();
-  File dir = SD.open((char *)path.c_str());
-  path = String();
-  if (!dir.isDirectory()) {
-    dir.close();
-    request->send(500, "text/plain", "LIST:NOTDIR");
-    return;
-  }
-  dir.rewindDirectory();
-
-  String output = "[";
-  for (int cnt = 0; true; ++cnt) {
-    File entry = dir.openNextFile();
-    if (!entry) {
-      break;
-    }
-    if (cnt > 0) {
-      output += ',';
-    }
-    output += "{\"type\":\"";
-    output += (entry.isDirectory()) ? "dir" : "file";
-    output += "\",\"name\":\"";
-    output += entry.name();
-    output += "\"";
-    output += ",\"size\":\"";
-    output += String(entry.size());
-    output += "\"";
-    output += "}";
-    entry.close();
-  }
-  output += "]";
-  request->send(200, "text/json", output);
-  dir.close();
-  sdcontrol.relinquishControl();
-
-  return;
-}
-
-void FSWebServer::onHttpDelete(AsyncWebServerRequest *request) {
-  if(sdcontrol.canWeTakeControl()== -1)
-  { 
-    DEBUG_LOG("Printer controlling the SD card"); 
-    request->send(500, "text/plain","DELETE:SDBUSY");
-    return;
-  }
-
-  Serial.println("onHttpDelete");
-  if (!request->hasArg("path")) {
-    request->send(500, "text/plain", "DELETE:BADARGS");
-    Serial.println("no path arg");
-  } 
-  else {
-    const AsyncWebParameter* p = request->getParam((uint8_t)0);
-    String path = "/" + request->urlDecode(p->value());
-    Serial.print("path:");
-    Serial.println(path);
-
-    sdcontrol.takeControl();
-    if (path == "/" || !SD.exists((char *)path.c_str())) {
-      request->send(500, "text/plain", "DELETE:BADPATH");
-      Serial.println("path not exists");
-    }
-    else {
-      sdcontrol.deleteFile(path);
-      Serial.println("send ok");
-      request->send(200, "text/plain", "ok");
-    }
-    sdcontrol.relinquishControl();
-  }
-}
-
 void FSWebServer::onHttpFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
-
-  if (request->url() != "/upload") {
-    DEBUG_LOG("Upload bad args");
-    request->send(500, "text/plain","UPLOAD:BADARGS");
-    return;
-  }
 
   if(sdcontrol.canWeTakeControl() == -1)
   {
@@ -412,6 +354,7 @@ void FSWebServer::onHttpFileUpload(AsyncWebServerRequest *request, String filena
       request->_tempFile.close();
     }
     DEBUG_LOG("Upload End\n");
+    _diskFree = sdcontrol.getDiskFree();
     sdcontrol.relinquishControl();
   }
 }
