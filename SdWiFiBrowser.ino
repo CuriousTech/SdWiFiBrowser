@@ -11,9 +11,10 @@ void setup() {
   SPIFFS.begin();
   sdcontrol.setup();
   network.start();
-  server.begin(&SPIFFS);
+  server.begin();
 }
 
 void loop() {
   network.loop();
+  server.loop();
 }
