@@ -20,11 +20,12 @@
     <div class="container">
       <div class="tm-file-form-container mt-4">
         <form action="index.html" method="GET" class="form-inline tm-file-form">
-          <div method="GET" class="text-uppercase tm-setting" onclick="javascrtpt:window.location.href='wifi.htm'" >Setting</div>
+          <div method="GET" class="text-uppercase tm-setting" onclick="window.location='/wifi.htm';" >Setting</div>
           <div class="form-group tm-file-box">
             <input type="file" id="Choose" value="Choose" class="tm-file-input form-control" name="data" >
             <input id = "uploadButton" type="button" value="Upload" class="form-control tm-file-submit" onclick=javascript:onClickUpload() />
             <input id = "updateButton" type="button" value="Update List" class="form-control tm-file-submit" onclick=javascript:onClickUpdateList() />
+          <div id='pstatus' style="color:bisque">Idle</div>
           </div>
         </form>
       </div>
@@ -65,7 +66,7 @@
       $(function () {
         $('.tm-current-year').text(new Date().getFullYear());  // Update year in copyright
       });
-      updateList()
+      openSocket()
     </script>
 </body>
 </html>
