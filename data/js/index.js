@@ -1,49 +1,56 @@
-var renderPage = true;
-var sdbusy = false;
+keepAlive=3
+sdbusy=false
 
-if (navigator.userAgent.indexOf('MSIE') !== -1
-    || navigator.appVersion.indexOf('Trident/') > 0) {
-    /* Microsoft Internet Explorer detected in. */
-    alert("Please view this in a modern browser such as Chrome or Microsoft Edge.");
-    renderPage = false;
+function sendWsVar(key,value)
+{
+    ws.send('{"'+key+'":\"'+value+'\"}')
 }
 
-function httpPost(filename, data, type) {
-    xmlHttp = new XMLHttpRequest();
-    xmlHttp.onreadystatechange = httpPostProcessRequest;
-    var formData = new FormData();
-    formData.append("data", new Blob([data], { type: type }), filename);
-    xmlHttp.open("POST", "/edit");
-    xmlHttp.send(formData);
+function deleteFile(name)
+{
+    sendWsVar('delete', '/'+name)
+    updateList()
+}
+
+function handleTimer()
+{
+    if(keepAlive)
+    {
+        if(--keepAlive == 0)
+            alert("Connection timed out")
+    }
+}
+
+function openSocket(){
+    ws=new WebSocket("ws://"+window.location.host+"/ws")
+    dt=new Date()
+    ws.onopen=function(evt){
+        sendWsVar('time',(dt.valueOf()/1000).toFixed())
+        updateList()
+    }
+    ws.onclose=function(evt){alert("Connection closed")}
+    ws.onmessage=function(evt){
+      console.log(evt.data)
+      d=JSON.parse(evt.data)
+      keepAlive=3
+      switch(d.type)
+      {
+        case 'info':
+            document.getElementById('pstatus').innerHTML='SD: ' + niceBytes(+d.sdfree*1024) + ' free &nbsp; Internal: ' + niceBytes(+d.intfree*1024) + ' free'
+            break
+        case 'alert':
+            alert(d.value)
+            break
+        case 'filelist':
+            onHttpList(d.value)
+            break
+      }
+    }
+    setInterval(handleTimer, 1000)
 }
 
 function httpGetList(path) {
-    xmlHttp = new XMLHttpRequest(path);
-    xmlHttp.onload = function () {
-        sdbusy = false;
-    }
-    xmlHttp.onreadystatechange = function () {
-        var resp = xmlHttp.responseText;
-        if (xmlHttp.readyState == 4) {
-            console.log("Get response of path:");
-            console.log(resp);
-
-            if (xmlHttp.status == 200)
-                onHttpList(resp);
-
-            if( resp.startsWith('LIST:')) {
-                if(resp.includes('SDBUSY')) {
-                    alert("Printer is busy, wait for 10s and try again");
-                } else if(resp.includes('BADARGS') || 
-                            resp.includes('BADPATH') ||
-                            resp.includes('NOTDIR')) {
-                    alert("Bad args, please try again or reset the module");
-                }
-            }
-        }
-    };
-    xmlHttp.open('GET', '/list?dir=' + path, true);
-    xmlHttp.send(null);
+    sendWsVar("list", path)
 }
 
 function httpGetGcode(path) {
@@ -52,8 +59,7 @@ function httpGetGcode(path) {
         var resp = xmlHttp.responseText;
         if (xmlHttp.readyState == 4) {
 
-            console.log("Get download response:");
-            console.log(xmlHttp.responseText);
+            console.log("Get download response:" + xmlHttp.responseText);
 
             if( resp.startsWith('DOWNLOAD:')) {
                 if(resp.includes('SDBUSY')) {
@@ -69,42 +75,11 @@ function httpGetGcode(path) {
 }
 
 function httpRelinquishSD() {
-    xmlHttp = new XMLHttpRequest();
-    xmlHttp.open('GET', '/relinquish', true);
-    xmlHttp.send();
+    sendWsVar('relinquish', 0)
 }
 
 function onClickSelect() {
-    var obj = document.getElementById('filelistbox').innerHTML = "";
-}
-
-function onClickDelete(filename) {
-    if(sdbusy) {
-        alert("SD card is busy");
-        return
-    }
-    sdbusy = true;
-
-    console.log('delete: %s', filename);
-    xmlHttp = new XMLHttpRequest();
-    xmlHttp.onload = function () {
-        sdbusy = false;
-        updateList();
-    };
-    xmlHttp.onreadystatechange = function () {
-        var resp = xmlHttp.responseText;
-
-        if( resp.startsWith('DELETE:')) {
-            if(resp.includes('SDBUSY')) {
-                alert("Printer is busy, wait for 10s and try again");
-            } else if(resp.includes('BADARGS') || 
-                        resp.includes('BADPATH')) {
-                alert("Bad args, please try again or reset the module");
-            }
-        }
-    };
-    xmlHttp.open('GET', '/delete?path=' + filename, true);
-    xmlHttp.send();
+    var obj = document.getElementById('filelistbox').innerHTML = ""
 }
 
 function getContentType(filename) {
@@ -181,7 +156,7 @@ function onUploaded(evt) {
     updateList();
     sdbusy = true;
     document.getElementById('uploadButton').disabled = false;
-    alert('Upload done!');
+    console.log('Upload done!');
 }
 
 function onUploadFailed(evt) {
@@ -212,7 +187,6 @@ function onClickUpload() {
 
     sdbusy = true;
 
-    // document.getElementById('uploadbutton').css("pointerEvents","none");
     document.getElementById('uploadButton').disabled = true;
     document.getElementById('probar').style.display="block";
     
@@ -221,42 +195,40 @@ function onClickUpload() {
     xmlHttp.onerror = onUploadFailed;
     xmlHttp.upload.onprogress = onUploading;
     var formData = new FormData();
-    var savePath = '';
     savePath = '/' + input.files[0].name;
     formData.append('data', input.files[0], savePath);
     xmlHttp.open('POST', '/upload');
     xmlHttp.send(formData);
 }
 
-function niceBytes(x){
+function niceBytes(n){
     const units = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-    let l = 0, n = parseInt(x, 10) || 0;
+    let l = 0;
 
-    while(n >= 1024 && ++l){
+
+    while(n >= 1024 && ++l)
         n = n/1024;
-    }
     return(n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + units[l]);
 }
 
 function createFilelistItem(i,type,filename,size) {
-    var data =  "<div class=\"media\">\n" + 
-                    "<div class=\"file-index\" >"+i+"</div>\n" +
-                    "<div class=\"media-body tm-bg-gray\">\n" +
-                        "<div class=\"tm-description-box\">\n" +
-                            "<h5 id=filename class=\"tm-text-blue\">"+filename+"</h5>\n" +
-                            "<p class=\"mb-0\">Type:"+type+" | Size:"+size+"</p>\n" +
-                        "</div>\n" +
-                        "<div class=\"tm-dd-box\">\n" +
-                            "<input id=\""+filename+"\" type=\"button\" value=\"Delete\" class=\"btn tm-bg-blue tm-text-white tm-dd\" onclick=javascript:onClickDelete(id) />" +
-                            "<input id=\""+filename+"\" type=\"button\" method=\"GET\" value=\"Download\" class=\"btn tm-bg-blue tm-text-white tm-dd\" onclick=javascript:onClickDownload(id) />" +
-                        "</div>\n" +
-                    "</div>\n" +
-                "</div>";
-    return data;
+    var data =  '<div class="media">\n' + 
+                '<div class="file-index" >'+i+'</div>\n' +
+                '<div class="media-body tm-bg-gray">\n' +
+                    '<div class="tm-description-box">\n' +
+                        '<h5 id=filename class="tm-text-blue">'+filename+'</h5>\n' +
+                        '<p class="mb-0">Type:'+type+' | Size:'+size+'</p>\n' +
+                    '</div>\n' +
+                    '<div class="tm-dd-box">\n' +
+                        '<input id="'+filename+'" type="button" value="Delete" class="btn tm-bg-blue tm-text-white tm-dd" onclick="{deleteFile(id)}" />' +
+                        '<input id="'+filename+'" type="button" method="GET" value="Download" class="btn tm-bg-blue tm-text-white tm-dd" onclick="{onClickDownload(id)}" />' +
+                    '</div>\n' +
+                '</div>\n' +
+            '</div>';
+    return data
 }
 
-function onHttpList(response) {
-    var list = JSON.parse(response);
+function onHttpList(list) {
     for (var i = 0; i < list.length; i++) {
         // console.log(list[i].name);
         // console.log(list[i].size);
