@@ -7,6 +7,7 @@
 #include "sdControl.h"
 #include <SPIFFS.h>
 #include <ArduinoOTA.h>
+#include "jsonString.h"
 
 #ifdef ESP32
   #include <WiFi.h>
@@ -82,7 +83,7 @@ int Network::connect(String ssid, String psd)
 
 int Network::start()
 {
-  if(config.load(&SPIFFS) != 1) { // Not connected before
+  if(config.load() != 1) { // Not connected before
     // Start the AP
     startSoftAP();
     return 1;
@@ -92,7 +93,7 @@ int Network::start()
 
   WiFi.hostname(AP_SSID);
   WiFi.mode(WIFI_STA);
-  SERIAL_ECHO("Connecting to ");SERIAL_ECHOLN(config.ssid());
+  SERIAL_ECHO("Connecting to "); SERIAL_ECHOLN(config.ssid());
   WiFi.begin(config.ssid(), config.password());
 
   // Wait for connection
@@ -126,21 +127,17 @@ int Network::start()
   wifiConnecting = false;
   _stamode = true;
 
-  ArduinoOTA.setHostname(HOSTNAME);
-  ArduinoOTA.begin();
-  ArduinoOTA.onStart([]() {
-    SERIAL_ECHOLN("OTA started");
-    delay(100);
-  });
-
+  initOTA();
   return 3;
 }
 
 int Network::status()
 {
-  if(wifiConnected) {
+  if(_stamode == false)
+    return 4;
+
+  if(wifiConnected)
     return 3; // connected
-  }
   else {
     if(wifiConnecting) return 2; // connecting
     else return 1; // fail
@@ -160,17 +157,18 @@ bool Network::isSTAmode() {
 }
 
 void Network::startSoftAP() {
+  WiFi.hostname(AP_SSID);
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(AP_local_ip, AP_gateway, AP_subnet);
-  WiFi.beginSmartConfig();
   if (WiFi.softAP(AP_SSID))
-  {                           
+  {
     _stamode = false;
     Serial.println("SD-WIFI-PRO SoftAP started.");
     Serial.print("IP address = ");
     Serial.println(WiFi.softAPIP());
     Serial.println(String("MAC address = ")  + WiFi.softAPmacAddress().c_str());
-    Serial.println("Or use EspTouch");
+//    WiFi.beginSmartConfig();  // disables AP mode
+//    Serial.println("Use EspTouch");
     config.clear();
   } 
   else
@@ -184,6 +182,7 @@ void Network::startSoftAP() {
 
 void Network::getWiFiList(String &list) {
   list = _wifiList;
+  _scanComplete = false;
 }
 
 void Network::doScan() {
@@ -195,25 +194,37 @@ void Network::scanWiFi() {
   Serial.println("--------->");
   int n = WiFi.scanNetworks();
   Serial.println("scan done");
-  _wifiList = "[";
+  _wifiList = "{\"type\":\"scan\",\"value\":[";
   if (n != 0) {
     Serial.print(n);
     Serial.println(" networks found");
     for (int i = 0; i < n; ++i) {
-      _wifiList += "{\"ssid\":\"";
-      _wifiList += WiFi.SSID(i);
-      _wifiList += "\",\"rssi\":\"";
-      _wifiList += WiFi.RSSI(i);
-      _wifiList += "\"";
-      _wifiList += ",\"type\":\"";
-      _wifiList += (WiFi.encryptionType(i) == WIFI_AUTH_OPEN)? "open":"close";
-      _wifiList += "\"";
-      _wifiList += "}";
-      if(i!=n-1) _wifiList += ",";
+      if(i) _wifiList += ",";
+      jsonString js;
+      js.Var("ssid", WiFi.SSID(i));
+      js.Var("rssi", WiFi.RSSI(i));
+      js.Var("type", (WiFi.encryptionType(i) == WIFI_AUTH_OPEN)? "open":"close");
+      _wifiList += js.Close();
     }
   }
-  _wifiList += "]";
+  _wifiList += "]}";
   Serial.println(_wifiList);
+  _scanComplete = true;
+}
+
+bool Network::hasScan()
+{
+  return _scanComplete;
+}
+
+void Network::initOTA()
+{
+  ArduinoOTA.setHostname(HOSTNAME);
+  ArduinoOTA.begin();
+  ArduinoOTA.onStart([]() {
+    SERIAL_ECHOLN("OTA started");
+    delay(100);
+  });
 }
 
 void Network::loop()
@@ -231,10 +242,14 @@ void Network::loop()
 
   if(wifiConnected == false)
   {
-    if( WiFi.smartConfigDone())
+    if( WiFi.smartConfigDone() )
     {
-      Serial.println("EspTouch complete");
-      connect( WiFi.SSID(), WiFi.psk() );
+      Serial.println("EspTouch complete, connected");
+      config.save( WiFi.SSID().c_str(), WiFi.psk().c_str() );
+      wifiConnected = true;
+      wifiConnecting = false;
+      _stamode = true;
+      initOTA();
     }
   }
 }
