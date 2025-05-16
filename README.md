@@ -60,9 +60,9 @@ How to flash: Set both switches in the ON position, and jumper IO0 to GND, then 
 ![Board](howtoflash.jpg)  
 For building, I used Arduino IDE, and ESP32 2.0.14, board is ESP32-PICO-D4 and default partition  
 Changes in this fork:  
-SETUP.INI is read from the SDCard, not internal SPIFFS  
+SETUP.INI is read from the SDCard, not internal SPIFFS, and proiritized  
 Filenames with spaces can be deleted and downloaded  
 Added ArduinoOTA for updates  
-Added EspTouch support (now disabled because it overrides AM mode)  
+Added EspTouch support (now disabled because it overrides AP mode)  
 Changed a lot of interactions to WebSocket I/O, added disk free space to main page  
 WiFi SSID scan is sent to wifi page, but not listed yet  
