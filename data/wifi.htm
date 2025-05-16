@@ -4,13 +4,13 @@
         <title>SD WIFI PRO SETTING</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="stylesheet" href="css/bootstrap.min.css">                                            <!-- https://getbootstrap.com/ -->
+        <link rel="stylesheet" href="css/index.css">
         <script>
 
         wifiStatus=0
         openSocket()
         function openSocket(){
             ws=new WebSocket("ws://"+window.location.host+"/ws")
-            dt=new Date()
             ws.onopen=function(evt){sendWsVar('scan',0)}
             ws.onclose=function(evt){alert("Connection closed")}
             ws.onmessage=function(evt){
@@ -26,10 +26,11 @@
                             break
                         wifiStatus = +d.wifiStatus
                         stats=['','Error','Connecting...','Connected','AP Mode']
-                        txt = (wifiStatus == 3) ? (' IP:'+d.ip) : ''
-                        document.getElementById('status').innerText = "WiFi: " + stats[wifiStatus] + txt
+                        txt = (wifiStatus == 3) ? (' &nbsp; IP:'+d.ip) : ''
+                        document.getElementById('status').innerHTML = "WiFi: " + stats[wifiStatus] + txt
                         break
                     case 'scan':
+                        fillSSIDList(d.value)
                         break
                 }
             }
@@ -37,14 +38,40 @@
 
         function sendWsVar(key,value)
         {
-            ws.send('{"'+key+'":'+value+'}')
+            ws.send('{"'+key+'":"'+value+'""}')
         }
 
+        function fillSSIDList(list)
+        {
+            listbox=document.getElementById("ssidlistbox")
+            listbox.innerHTML=''
+            for (i = 0; i < list.length; i++) {
+                listbox.innerHTML+=createlistItem(i+1,list[i].ssid,list[i].rssi,list[i].type);
+            }
+        }
+
+        function createlistItem(i,ssid,rssi,type) {
+            var data = '<div class="media">' + 
+                        '<div class="file-index">'+i+'</div>' +
+                        '<div class="media-body tm-bg-gray">' +
+                            '<div class="tm-description-box">' +
+                                '<input type="button" class="tm-text-blue" value="'+ssid+'" onclick="{setSSID(this.value)}">' +
+                                ' &nbsp; Type: '+type+' | RSSI: '+rssi +
+                            '</div>' +
+                        '</div>' +
+                       '</div>';
+                       return data
+        }
+
+        function setSSID(ssid)
+        {
+            document.getElementById('ssid').value=ssid
+        }
 
         function onClickConnect() {
             console.log("onClickConnect");
 
-            var ssid = document.getElementById('ssid').value;
+            ssid = document.getElementById('ssid').value;
             if(ssid == '') {
                 alert("SSID empty");
                 return;
@@ -58,22 +85,20 @@
 
             var status = document.getElementById('status');
             status.innerText = "Connecting, please wait ...";
-            sendWsVar('SSID', '"'+ssid+'"')
-            sendWsVar('PWD', '"'+password+'"')
+            sendWsVar('SSID', ssid)
+            sendWsVar('PWD', password)
         }
-//    listS += "SSID:" + list[i].ssid + " , RSSI" + list[i].rssi + " , Type:" + list[i].type + "\n";
-
 
         function onClickScan() {
             sendWsVar('scan',0)
         }
         
         function onClickAPMode() {
-            var status = document.getElementById('status');
+            var status = document.getElementById('status')
             if(wifiStatus==4) {
-                status.innerText = "AP: SD-WIFI-PRO already started, IP: 192.168.4.1";
+                status.innerText = "AP: SD-WIFI-PRO already started, IP: 192.168.4.1"
             }else{
-                status.innerText = "AP: SD-WIFI-PRO, IP: 192.168.4.1";
+                status.innerText = "AP: SD-WIFI-PRO, IP: 192.168.4.1"
                 sendWsVar('startSoftAP',0)
             } 
         }
@@ -106,9 +131,15 @@
             <br>
             <!-- <input class="btn" type="button" value="Scan" onclick=javascript:onClickScan() />
             <br> -->
-            <span id="status"></span>
+            <span id="status">Scanning...</span>
         </form>
-        </center>
+      </center>
+      <div id="ssidlist" class="row mt-4 mb-1">
+        <div class="col-xl-12">
+          <div id="ssidlistbox" class="file-boxes">
+          </div>
+        </div>
+      </div>
 
     </body>
 </html>
