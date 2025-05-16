@@ -1,11 +1,7 @@
 #ifndef _NETWORK_H_
 #define _NETWORK_H_
 
-#if defined(ARDUINO) && ARDUINO >= 100
-    #include "Arduino.h"
-#else
-    #include "WProgram.h"
-#endif
+#include "Arduino.h"
 
 #define HOSTNAME		"FYSETC"
 #define SERVER_PORT		80
@@ -32,8 +28,11 @@ public:
   bool isSTAmode();
   void getWiFiList(String &list);
   void doScan();
+  bool hasScan();
 
 private:
+  void initOTA();
+
   bool wifiConnected;
   bool wifiConnecting;
   bool initFailed;
@@ -44,6 +43,7 @@ private:
   String _psd;
   bool _doConnect;
   bool _doScan;
+  bool _scanComplete;
 };
 
 extern Network network;
