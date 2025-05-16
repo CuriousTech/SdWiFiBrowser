@@ -12,7 +12,8 @@ public:
   static int canWeTakeControl();
   static bool wehaveControl();
   static bool printerRequest();
-  void deleteFile(String path);
+  bool deleteFile(String path);
+  uint32_t getDiskFree();
 
 private:
   static volatile long _spiBlockoutTime;
