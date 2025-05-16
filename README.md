@@ -52,7 +52,7 @@ Click "Go to AP mode", can change SD WIFI PRO into AP mode.
 The 0.x release use Arduino to compile.  
     
 Note:the SD WIFI PRO use AsyncTCP and ESPAsyncWebServer.  
-AsyncTCP: https://github.com/dvarrel/AsyncTCP  
+AsyncTCP: https://github.com/ESP32Async/AsyncTCP  (newer version)  
 ESPAsyncWebServer: https://github.com/ESP32Async/ESPAsyncWebServer (newer version)  
   
 ### Additional notes (CuriousTech):  
