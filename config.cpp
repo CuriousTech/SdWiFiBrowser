@@ -1,11 +1,10 @@
-#include <EEPROM.h>
 #include "pins.h"
 #include "config.h"
 #include "serial.h"
 #include "SD.h"
 #include "sdcontrol.h"
 
-int Config::loadFS() {
+int Config::readINI() {
   SERIAL_ECHOLN("Going to load config from SDCard SETUP.INI file");
 
   sdcontrol.takeControl();
@@ -20,6 +19,7 @@ int Config::loadFS() {
   // Get SSID and PASSWORD from file
   int rst = 0,step = 0;
   String buffer,sKEY,sValue;
+
   while (file.available()) { // check for EOF
     buffer = file.readStringUntil('\n');
     if(buffer.length() == 0) continue; // Empty line
@@ -67,31 +67,23 @@ FAIL:
   return rst;
 }
 
-unsigned char Config::load(FS* fs) {
-  _fs = fs;
+unsigned char Config::load() {
 
-  SERIAL_ECHOLN("Going to load config from EEPROM");
-
-  EEPROM.begin(EEPROM_SIZE);
-  uint8_t *p = (uint8_t*)(&data);
-  for (int i = 0; i < sizeof(data); i++)
-  {
-    *(p + i) = EEPROM.read(i);
-  }
-  EEPROM.commit();
-
-  if(data.flag) {
-    SERIAL_ECHOLN("Going to use the old network config");
-    return data.flag;
-  }
-
-  // Try to get the config from ini file
-  if(0 == loadFS())
+  // Try to get the config from ini file (user override)
+  if(0 == readINI())
   {
     return 1; // Return as connected before
   }
-  
-  return 0;
+
+  SERIAL_ECHOLN("Going to load config from Preferences");
+
+  prefs.begin("sdwifi", false);
+  prefs.getBytes("Creds", &data, sizeof(data) );
+  if(data.flag) {
+    SERIAL_ECHOLN("Going to use the old network config");
+  }
+
+  return data.flag;
 }
 
 char* Config::ssid() {
@@ -116,41 +108,24 @@ void Config::save(const char*ssid,const char*password) {
   if(ssid ==NULL || password==NULL)
     return;
 
-  EEPROM.begin(EEPROM_SIZE);
   data.flag = 1;
-  strncpy(data.ssid, ssid, WIFI_SSID_LEN);
-  strncpy(data.psw, password, WIFI_PASSWD_LEN);
-  uint8_t *p = (uint8_t*)(&data);
-  for (int i = 0; i < sizeof(data); i++)
-  {
-    EEPROM.write(i, *(p + i));
-  }
-  EEPROM.commit();
+  strncpy(data.ssid, ssid, sizeof(data.ssid) );
+  strncpy(data.psw, password, sizeof(data.psw) );
+  prefs.putBytes("Creds", &data, sizeof(data) );
 }
 
 void Config::save() {
   if(data.ssid == NULL || data.psw == NULL)
     return;
 
-  EEPROM.begin(EEPROM_SIZE);
   data.flag = 1;
-  uint8_t *p = (uint8_t*)(&data);
-  for (int i = 0; i < sizeof(data); i++)
-  {
-    EEPROM.write(i, *(p + i));
-  }
-  EEPROM.commit();
+  prefs.putBytes("Creds", &data, sizeof(data) );
 }
 
 void Config::clear() {
 
-  EEPROM.begin(EEPROM_SIZE);
-  data.flag = 0;
-  for (int i = 0; i < EEPROM_SIZE; i++)
-  {
-    EEPROM.write(i, 0);
-  }
-  EEPROM.commit();
+  memset(&data, 0, sizeof(data));
+  prefs.putBytes("Creds", &data, sizeof(data) );
 }
 
 Config config;
