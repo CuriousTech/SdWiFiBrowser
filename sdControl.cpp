@@ -109,24 +109,17 @@ bool SDControl::printerRequest() {
 	return _printerRequest;
 }
 
-bool SDControl::deleteFile(String path)
+bool SDControl::deleteFile(String path, bool bDir)
 {
-  File file = SD.open((char *)path.c_str());
-  if(!file) {
-    DEBUG_LOG("Open file fail\n");
-    return false;
-  }
-  if (!file.isDirectory()) 
-  {
-    file.close();
-    SD.remove((char *)path.c_str());
-  }
+  if (bDir) 
+    return SD.rmdir((char *)path.c_str());
   else
-  {
-    file.close();
-    return false;
-  }
-  return true;
+    return SD.remove((char *)path.c_str());
+}
+
+bool SDControl::createDir(char *pszName)
+{
+  return SD.mkdir(pszName);
 }
 
 uint32_t SDControl::getDiskFree()
