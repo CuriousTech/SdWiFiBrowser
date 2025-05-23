@@ -3,16 +3,26 @@
 #include "serial.h"
 #include "SD.h"
 #include "sdcontrol.h"
+#include "FSWebServer.h"
 
-int Config::readINI() {
+int Config::readINI(bool bSD) {
   SERIAL_ECHOLN("Going to load config from SDCard SETUP.INI file");
 
-  sdcontrol.takeControl();
+  File file;
 
-  File file = SD.open(CONFIG_FILE, "r");
+  if(bSD)
+  {
+    sdcontrol.takeControl();
+    file = SD.open(CONFIG_FILE, "r");
+  }
+  else
+  {
+    file = INTERNAL_FS.open(CONFIG_FILE, "r");
+  }
+
   if (!file) {
     SERIAL_ECHOLN("Failed to open config file");
-    sdcontrol.relinquishControl();
+    if(bSD) sdcontrol.relinquishControl();
     return 1;
   }
 
@@ -62,15 +72,22 @@ int Config::readINI() {
 
 FAIL:
   file.close();
-  sdcontrol.relinquishControl();
+  if(bSD) sdcontrol.relinquishControl();
 
   return rst;
 }
 
 unsigned char Config::load() {
 
+  INTERNAL_FS.begin(true);
+
   // Try to get the config from ini file (user override)
-  if(0 == readINI())
+  if(0 == readINI(true)) // SDCard
+  {
+    return 1; // Return as connected before
+  }
+
+  if(0 == readINI(false)) // SPIFFS/INTERNAL_FS
   {
     return 1; // Return as connected before
   }
