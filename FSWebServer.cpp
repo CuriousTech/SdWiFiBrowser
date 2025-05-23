@@ -21,7 +21,7 @@ void wsTime(int32_t nValue, char *pszValue)
   timeval tv;
   tv.tv_sec = nValue;
   settimeofday(&tv, NULL);
-  Serial.println("setTime");
+  SERIAL_ECHOLN("setTime");
 }
 
 void wsRelinquish(int32_t nValue, char *pszValue)
@@ -31,24 +31,41 @@ void wsRelinquish(int32_t nValue, char *pszValue)
 
 void wsList(int32_t nValue, char *pszValue)
 {
-  if(sdcontrol.canWeTakeControl() == -1){
-    server.sendAlert("Printer controlling the SD card");
-    return;
+  if(server._bDiskSwitch == false)
+  {
+    if(sdcontrol.canWeTakeControl() == -1){
+      server.sendAlert("Printer controlling the SD card");
+      return;
+    }
   }
 
-  if ( (pszValue[0] == '/' && pszValue[1] == 0 ) == false && SD.exists(pszValue) == false) {
-    Serial.print("dir not found: ");
+  File dir;
+  if(server._bDiskSwitch)
+  {
+    dir = INTERNAL_FS.open(pszValue);
+  }
+  else
+  {
+    sdcontrol.takeControl();
+    dir = SD.open(pszValue);
+  }
+
+  if(!dir)
+  {
+    String s = "Can't open ";
+    s += pszValue;
+    server.sendAlert(s);
+    Serial.print("Can't open ");
     Serial.println(pszValue);
-    return;
   }
 
-  sdcontrol.takeControl();
-  File dir = SD.open(pszValue);
   if (!dir.isDirectory()) {
     dir.close();
+    server.sendAlert("path not directory");
     Serial.println("path not directory");
     return;
   }
+
   dir.rewindDirectory();
 
   String output = "{\"type\":\"filelist\",\"value\":[";
@@ -61,37 +78,115 @@ void wsList(int32_t nValue, char *pszValue)
     jsonString jsList;
     jsList.Var("type", (entry.isDirectory()) ? "dir" : "file");
     jsList.Var("name", entry.name() );
-    jsList.Var("size", entry.size() );
+    jsList.Var("size", (uint32_t)entry.size() );
     output += jsList.Close();
     entry.close();
   }
   output += "]}";
   dir.close();
-  sdcontrol.relinquishControl();
+  if(server._bDiskSwitch == false)
+    sdcontrol.relinquishControl();
   ws.textAll( output );
 }
 
 void wsDelete(int32_t nValue, char *pszValue)
 {
-  Serial.print("Delete: ");
+  SERIAL_ECHO("Delete: "); SERIAL_ECHOLN(pszValue);
+
+  if( pszValue[0] == '/' && pszValue[1] == 0)
+    return;
+
+  File file;
+
+  if(server._bDiskSwitch)
+  {
+    file = INTERNAL_FS.open(pszValue);
+SERIAL_ECHOLN("INT");
+  }
+  else
+  {
+    if(sdcontrol.canWeTakeControl()== -1)
+    {
+      server.sendAlert("Printer controlling the SD card");
+      return;
+    }
+    sdcontrol.takeControl();
+    file = SD.open(pszValue);
+  }
+
+  if(!file) {
+    DEBUG_LOG("Open file fail\n");
+    return;
+  }
+
+  bool isDir = file.isDirectory();
+  file.close();
+
+  if(server._bDiskSwitch)
+  {
+    bool bRes;
+    if(isDir)
+      bRes = INTERNAL_FS.rmdir(pszValue);
+    else
+      bRes = INTERNAL_FS.remove(pszValue);
+    if(!bRes)
+      server.sendAlert("Could not delete file");
+      SERIAL_ECHOLN("Deleted");
+  }
+  else
+  {
+    if(!sdcontrol.deleteFile(pszValue, isDir))
+      server.sendAlert("Could not delete file");
+  
+    server._diskFree = sdcontrol.getDiskFree();
+    sdcontrol.relinquishControl();
+  }
+}
+
+void wsCreateDir(int32_t nValue, char *pszValue)
+{
+  Serial.print("CreateDir: ");
   Serial.println(pszValue);
-  if(sdcontrol.canWeTakeControl()== -1)
+
+  if( pszValue[0] == '/' && pszValue[1] == 0)
+    return;
+
+  File file;
+
+  if(server._bDiskSwitch)
   {
-    server.sendAlert("Printer controlling the SD card");
+    file = INTERNAL_FS.open(pszValue);
+  }
+  else
+  {
+    if(sdcontrol.canWeTakeControl()== -1)
+    {
+      server.sendAlert("Printer controlling the SD card");
+      return;
+    }
+    sdcontrol.takeControl();
+    file = SD.open(pszValue);
+  }
+
+  if(file) {
+    file.close();
+    DEBUG_LOG("File exists\n");
     return;
   }
 
-  sdcontrol.takeControl();
-  if( (pszValue[0] == '/' && pszValue[1] == 0) || !SD.exists(pszValue) )
+  if(server._bDiskSwitch)
   {
-    server.sendAlert("File not found");
-    return;
+    if(!INTERNAL_FS.mkdir(pszValue))
+      server.sendAlert("Could not create directory");
   }
-  if(!sdcontrol.deleteFile(pszValue))
-    server.sendAlert("Could not delete file");
-
-  server._diskFree = sdcontrol.getDiskFree();
-  sdcontrol.relinquishControl();
+  else
+  {
+    if(!sdcontrol.createDir(pszValue))
+      server.sendAlert("Could not create directory");
+  
+    server._diskFree = sdcontrol.getDiskFree();
+    sdcontrol.relinquishControl();
+  }
 }
 
 void wsStartSoftAP(int32_t nValue, char *pszValue)
@@ -116,6 +211,16 @@ void wsScan(int32_t nValue, char *pszValue)
   network.doScan();
 }
 
+void wsDisk(int32_t nValue, char *pszValue)
+{
+  bool bNewSwitch = nValue ? true:false;
+
+  if(bNewSwitch != server._bDiskSwitch){
+    server._bDiskSwitch = bNewSwitch;
+    wsList(0, "/");
+  }
+}
+
 jsCbFunc jsonFuncs[]{
   {"time", wsTime},
   {"relinquish", wsRelinquish},
@@ -125,6 +230,8 @@ jsCbFunc jsonFuncs[]{
   {"SSID", wsSetSSID},
   {"PWD", wsSetPWD},
   {"scan", wsScan},
+  {"createdir", wsCreateDir},
+  {"disk", wsDisk},
   {"", NULL}
 };
 
@@ -137,8 +244,8 @@ void FSWebServer::onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * clie
 //      client->text( stuff );
       break;
     case WS_EVT_DISCONNECT:    //client disconnected
-      break;
     case WS_EVT_ERROR:    //error was received from the other end
+      _bDiskSwitch = false;
       break;
     case WS_EVT_PONG:    //pong message was received (in response to a ping request maybe)
       break;
@@ -171,9 +278,10 @@ void FSWebServer::loop() {
     jsonString js;
     js.Var("type", "info");
     js.Var("sdfree", _diskFree);
-    js.Var("intfree", (SPIFFS.totalBytes() - SPIFFS.usedBytes()) >> 10 );
+    js.Var("intfree", (uint32_t)((INTERNAL_FS.totalBytes() - INTERNAL_FS.usedBytes()) >> 10) );
     js.Var("wifiStatus", network.status() );
     js.Var("ip", WiFi.localIP().toString() );
+    js.Var("disk", _bDiskSwitch);
     ws.textAll(js.Close());
 
     if(network.hasScan())
@@ -231,7 +339,7 @@ String getContentType(String filename, AsyncWebServerRequest *request) {
 
 bool FSWebServer::onHttpNotFound(AsyncWebServerRequest *request) {
   String path = request->url();
-	DEBUG_LOG("handleFileRead: %s\r\n", path.c_str());
+	DEBUG_LOG("handleNotFound: %s\r\n", path.c_str());
 
 	if (path.endsWith("/"))
 		path += "index.htm";
@@ -257,44 +365,69 @@ bool FSWebServer::onHttpNotFound(AsyncWebServerRequest *request) {
 	return false;
 }
 
-bool FSWebServer::handleFileReadSD(String path, AsyncWebServerRequest *request) {
-	DEBUG_LOG("handleFileReadSD: %s\r\n", path.c_str());
+bool FSWebServer::handleFileRead(String path, AsyncWebServerRequest *request) {
+	DEBUG_LOG("handleFileRead: %s\r\n", path.c_str());
 
 	if (path.endsWith("/"))
 		path += "index.htm";
 
 	String contentType = getContentType(path, request);
 	String pathWithGz = path + ".gz";
-	sdcontrol.takeControl();
-	if (SD.exists(pathWithGz) || SD.exists(path)) {
-		if (SD.exists(pathWithGz)) {
-			path += ".gz";
-		}
-		DEBUG_LOG("Content type: %s\r\n", contentType.c_str());
-		AsyncWebServerResponse *response = request->beginResponse(SD, path, contentType);
-		if (path.endsWith(".gz"))
-			response->addHeader("Content-Encoding", "gzip");
-		DEBUG_LOG("File %s exist\r\n", path.c_str());
-		request->send(response);
-		DEBUG_LOG("File %s Sent\r\n", path.c_str());
 
-		return true;
-	}
-	else
-		DEBUG_LOG("Cannot find %s\n", path.c_str());
-	sdcontrol.relinquishControl();
-	return false;
+  if(_bDiskSwitch == false)
+  {
+  	sdcontrol.takeControl();
+  	if (SD.exists(pathWithGz) || SD.exists(path)) {
+  		if (SD.exists(pathWithGz)) {
+  			path += ".gz";
+  		}
+  		DEBUG_LOG("Content type: %s\r\n", contentType.c_str());
+  		AsyncWebServerResponse *response = request->beginResponse(SD, path, contentType);
+  		if (path.endsWith(".gz"))
+  			response->addHeader("Content-Encoding", "gzip");
+  		DEBUG_LOG("File %s exist\r\n", path.c_str());
+  		request->send(response);
+  		DEBUG_LOG("File %s Sent\r\n", path.c_str());
+  
+  		return true;
+  	}
+  	else
+  		DEBUG_LOG("Cannot find %s\n", path.c_str());
+  	sdcontrol.relinquishControl();
+  	return false;
+  }
+  else
+  {
+    if (INTERNAL_FS.exists(pathWithGz) || INTERNAL_FS.exists(path)) {
+      if (INTERNAL_FS.exists(pathWithGz)) {
+        path += ".gz";
+      }
+      DEBUG_LOG("Content type: %s\r\n", contentType.c_str());
+      AsyncWebServerResponse *response = request->beginResponse(INTERNAL_FS, path, contentType);
+      if (path.endsWith(".gz"))
+        response->addHeader("Content-Encoding", "gzip");
+      DEBUG_LOG("File %s exist\r\n", path.c_str());
+      request->send(response);
+      DEBUG_LOG("File %s Sent\r\n", path.c_str());
+  
+      return true;
+    }
+    else
+      DEBUG_LOG("Cannot find %s\n", path.c_str());
+    return false;
+  }
 }
 
 void FSWebServer::onHttpDownload(AsyncWebServerRequest *request) {
     DEBUG_LOG("onHttpDownload");
 
-    if(sdcontrol.canWeTakeControl() == -1)
-    {
-      DEBUG_LOG("Printer controlling the SD card"); 
-      request->send(500, "text/plain","DOWNLOAD:SDBUSY");
-      return;
-    }
+    if(_bDiskSwitch == false)
+      if(sdcontrol.canWeTakeControl() == -1)
+      {
+        DEBUG_LOG("Printer controlling the SD card"); 
+        request->send(500, "text/plain","DOWNLOAD:SDBUSY");
+        return;
+      }
   
     int params = request->params();
     if (params == 0) {
@@ -308,53 +441,90 @@ void FSWebServer::onHttpDownload(AsyncWebServerRequest *request) {
     AsyncWebServerResponse *response = request->beginResponse(200);
     response->addHeader("Connection", "close");
     response->addHeader("Access-Control-Allow-Origin", "*");
-    if (!this->handleFileReadSD(path, request))
+    if (!this->handleFileRead(path, request))
       request->send(404, "text/plain", "DOWNLOAD:FileNotFound");
     delete response; // Free up memory!
 }
 
 void FSWebServer::onHttpFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
 
-  if(sdcontrol.canWeTakeControl() == -1)
+  if(_bDiskSwitch)
   {
-    DEBUG_LOG("Printer controlling the SD card\n"); 
-    request->send(500, "text/plain","UPLOAD:SDBUSY");
-    return;
-  }
-
-  if (!index) { // start
-    sdcontrol.takeControl();
-    if(request->_tempFile){
+    if (!index) { // start
+      if(request->_tempFile){
+          request->_tempFile.close();
+      }
+  
+      if (INTERNAL_FS.exists((char *)filename.c_str())) {
+        INTERNAL_FS.remove((char *)filename.c_str());
+      }
+  
+      request->_tempFile = INTERNAL_FS.open(filename.c_str(), FILE_WRITE);
+      if(!request->_tempFile) {
+        request->send(500, "text/plain", "UPLOAD:OPENFAILED");
+        DEBUG_LOG("Upload: Open file failed: %s \n",filename.c_str());
+      } else {
+        DEBUG_LOG("Upload: First upload part: %s \n",filename.c_str());
+      }
+    } 
+  
+    if (len) { // Continue
+      if(len != request->_tempFile.write(data, len)){
+        DEBUG_LOG("Upload: write error\n");  
+      }
+      DEBUG_LOG("Upload: written: %d bytes\n",len);
+    }
+  
+    if (final) {  // End
+      if (request->_tempFile) {
         request->_tempFile.close();
+      }
+      DEBUG_LOG("Upload End\n");
     }
-
-    if (SD.exists((char *)filename.c_str())) {
-      SD.remove((char *)filename.c_str());
+  }
+  else // SD
+  {
+    if(sdcontrol.canWeTakeControl() == -1)
+    {
+      DEBUG_LOG("Printer controlling the SD card\n"); 
+      request->send(500, "text/plain","UPLOAD:SDBUSY");
+      return;
     }
-
-    request->_tempFile = SD.open(filename.c_str(), FILE_WRITE);
-    if(!request->_tempFile) {
-      request->send(500, "text/plain", "UPLOAD:OPENFAILED");
+  
+    if (!index) { // start
+      sdcontrol.takeControl();
+      if(request->_tempFile){
+          request->_tempFile.close();
+      }
+  
+      if (SD.exists((char *)filename.c_str())) {
+        SD.remove((char *)filename.c_str());
+      }
+  
+      request->_tempFile = SD.open(filename.c_str(), FILE_WRITE);
+      if(!request->_tempFile) {
+        request->send(500, "text/plain", "UPLOAD:OPENFAILED");
+        sdcontrol.relinquishControl();
+        DEBUG_LOG("Upload: Open file failed: %s \n",filename.c_str());
+      } else {
+        DEBUG_LOG("Upload: First upload part: %s \n",filename.c_str());
+      }
+    } 
+  
+    if (len) { // Continue
+      if(len != request->_tempFile.write(data, len)){
+        DEBUG_LOG("Upload: write error\n");  
+      }
+      DEBUG_LOG("Upload: written: %d bytes\n",len);
+    }
+  
+    if (final) {  // End
+      if (request->_tempFile) {
+        request->_tempFile.close();
+      }
+      DEBUG_LOG("Upload End\n");
+      _diskFree = sdcontrol.getDiskFree();
       sdcontrol.relinquishControl();
-      DEBUG_LOG("Upload: Open file failed: %s \n",filename.c_str());
-    } else {
-      DEBUG_LOG("Upload: First upload part: %s \n",filename.c_str());
     }
-  } 
-
-  if (len) { // Continue
-    if(len != request->_tempFile.write(data, len)){
-      DEBUG_LOG("Upload: write error\n");  
-    }
-    DEBUG_LOG("Upload: written: %d bytes\n",len);
-  }
-
-  if (final) {  // End
-    if (request->_tempFile) {
-      request->_tempFile.close();
-    }
-    DEBUG_LOG("Upload End\n");
-    _diskFree = sdcontrol.getDiskFree();
-    sdcontrol.relinquishControl();
-  }
+  } // SD
 }
