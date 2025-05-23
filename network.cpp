@@ -5,7 +5,6 @@
 #include "config.h"
 #include "pins.h"
 #include "sdControl.h"
-#include <SPIFFS.h>
 #include <ArduinoOTA.h>
 #include "jsonString.h"
 
@@ -55,11 +54,11 @@ int Network::connect(String ssid, String psd)
   while(WiFi.status() != WL_CONNECTED)
   {
     //blink();
-    Serial.print(".");
+    SERIAL_ECHO(".");
     timeout++;
     if(timeout++ > WIFI_CONNECT_TIMEOUT/100)
     {
-      Serial.println("");
+      SERIAL_ECHOLN("");
       wifiConnecting = false;
       Serial.println("Connect fail, please check your SSID and password");
       return 2;
