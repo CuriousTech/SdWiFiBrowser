@@ -60,9 +60,12 @@ How to flash: Set both switches in the ON position, and jumper IO0 to GND, then 
 ![Board](howtoflash.jpg)  
 For building, I used Arduino IDE, and ESP32 2.0.14, board is ESP32-PICO-D4 and default partition  
 Changes in this fork:  
-SETUP.INI is read from the SDCard, not internal SPIFFS, and proiritized  
+SETUP.INI is read from the SDCard, then internal SPIFFS, then Prefs when those fail  
 Filenames with spaces can be deleted and downloaded  
 Added ArduinoOTA for updates  
-Added EspTouch support (now disabled because it overrides AP mode)  
-Changed a lot of interactions to WebSocket I/O, added disk free space to main page  
 WiFi SSID scan in wifi page  
+Added EspTouch support (now disabled because it overrides AP mode). It can be enabled by uncommenting the beginConfig() line in network.cpp  
+Changed a lot of interactions to WebSocket I/O, added disk free space to main page  
+Added directory capability on SD card and internal. Internal must be changed to FFat to write and use directories.  This can be done by changing the 2 lines in FSWebServer.h but remember to upload data as FatFS using the ESP32 Sketch Data Upload Tool.  
+  
+![Web](web.png)  
