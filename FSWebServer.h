@@ -13,10 +13,14 @@
 #endif
 #include <WiFiClient.h>
 #include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
 #include <ArduinoOTA.h>
 
+#include <SPIFFS.h>
 #define INTERNAL_FS SPIFFS
+
+// Comment the 2 above, and uncomment these 2 for FFat (enabled write access and folders)
+//#include <FFat.h>
+//#define INTERNAL_FS FFat
 
 class FSWebServer : public AsyncWebServer {
 public:
@@ -26,6 +30,7 @@ public:
   void sendAlert(String s);
   
   uint32_t _diskFree;
+  bool _bDiskSwitch;
 
 protected:
   void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len);
@@ -33,7 +38,6 @@ protected:
   bool onHttpNotFound(AsyncWebServerRequest *request);
   void onHttpDownload(AsyncWebServerRequest *request);
   bool handleFileRead(String path, AsyncWebServerRequest *request);
-  bool handleFileReadSD(String path, AsyncWebServerRequest *request);
   void onHttpFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
 };
 
