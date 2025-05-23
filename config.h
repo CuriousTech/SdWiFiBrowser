@@ -21,7 +21,7 @@ typedef struct config_type
 
 class Config  {
 public:
-  int readINI();
+  int readINI(bool bSD);
   unsigned char load();
   char* ssid();
   void ssid(char* ssid);
