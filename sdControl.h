@@ -12,9 +12,9 @@ public:
   static int canWeTakeControl();
   static bool wehaveControl();
   static bool printerRequest();
-  bool deleteFile(String path);
+  bool deleteFile(String path, bool bDir);
   uint32_t getDiskFree();
-
+  bool createDir(char *pszName);
 private:
   static volatile long _spiBlockoutTime;
   static bool _weTookBus;
