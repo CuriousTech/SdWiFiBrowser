@@ -22,9 +22,6 @@
 
 #include "serial.h"
 
-const char errormagic[] PROGMEM = "Error:";
-const char echomagic[] PROGMEM = "echo:";
-
 void serial_echopair_PGM(const char* s_P, const char *v)   { serialprintPGM(s_P); SERIAL_ECHO(v); }
 void serial_echopair_PGM(const char* s_P, char v)          { serialprintPGM(s_P); SERIAL_CHAR(v); }
 void serial_echopair_PGM(const char* s_P, int v)           { serialprintPGM(s_P); SERIAL_ECHO(v); }
