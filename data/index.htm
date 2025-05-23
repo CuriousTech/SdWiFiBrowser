@@ -25,7 +25,10 @@
             <input type="file" id="Choose" value="Choose" class="tm-file-input form-control" name="data" >
             <input id = "uploadButton" type="button" value="Upload" class="form-control tm-file-submit" onclick=javascript:onClickUpload() />
             <input id = "updateButton" type="button" value="Update List" class="form-control tm-file-submit" onclick=javascript:onClickUpdateList() />
-          <div id='pstatus' style="color:bisque">Idle</div>
+          <div id='pstatus' style="color:bisque">
+            <input id = "SD" type="button" value="SD Card" class="form-control tm-file-submit" onclick="{setDisk(0)}" />
+            <input id = "INT" type="button" value="INTERNAL" class="form-control tm-file-submit" onclick="{setDisk(1)}" />
+          </div>
           </div>
         </form>
       </div>
@@ -37,19 +40,6 @@
       <div id="filelist" class="row mt-4 mb-1">
         <div class="col-xl-12">
           <div id="filelistbox" class="file-boxes">
-            <!-- <div class="media">
-              <div class="file-index" >1</div>
-              <div class="media-body tm-bg-gray">
-                <div class="tm-description-box">
-                  <h5 class="tm-text-blue">Vivamus eget urna vitae ante</h5>
-                  <p class="mb-0">Insertion HTML Template includes 3 different pages. </p>
-                </div>
-                <div class="tm-dd-box">
-                  <input id="+filename+" type="button" value="Delete" class=" btn tm-bg-blue tm-text-white tm-dd" >
-                  <input id="+filename+" type="button" method="GET" value="Download" class="btn tm-bg-blue tm-text-white tm-dd">
-                </div>
-              </div>
-            </div> -->
           </div> <!-- filelistbox -->
         </div>
       </div>
