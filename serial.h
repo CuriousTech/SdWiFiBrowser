@@ -37,41 +37,29 @@
 
 #define SERIAL_INIT(...)		{ MYSERIAL0.begin(__VA_ARGS__); }
 
-extern const char echomagic[] PROGMEM;
-extern const char errormagic[] PROGMEM;
-
 #define SERIAL_CHAR(x) ((void)MYSERIAL0.write(x))
-#define SERIAL_EOL() SERIAL_CHAR('\n')
+#define SERIAL_EOL() SERIAL_CHAR('\r\n')
 
 #define SERIAL_PRINT(x,b)      MYSERIAL0.print(x,b)
 #define SERIAL_PRINTLN(x,b)    MYSERIAL0.println(x,b)
 #define SERIAL_PRINTF(args...) MYSERIAL0.printf(args)
-
-#define SERIAL_FLUSH()         MYSERIAL0.flush()
 
 #define SERIAL_PROTOCOLCHAR(x)              SERIAL_CHAR(x)
 #define SERIAL_PROTOCOL(x)                  MYSERIAL0.print(x)
 #define SERIAL_PROTOCOL_F(x,y)              MYSERIAL0.print(x,y)
 #define SERIAL_PROTOCOLPGM(x)               serialprintPGM(PSTR(x))
 #define SERIAL_PROTOCOLLN(x)                do{ MYSERIAL0.print(x); SERIAL_EOL(); }while(0)
-#define SERIAL_PROTOCOLLNPGM(x)             serialprintPGM(PSTR(x "\n"))
+#define SERIAL_PROTOCOLLNPGM(x)             serialprintPGM(PSTR(x "\r\n"))
 #define SERIAL_PROTOCOLPAIR(name, value)    serial_echopair_PGM(PSTR(name),(value))
 #define SERIAL_PROTOCOLLNPAIR(name, value)  do{ SERIAL_PROTOCOLPAIR(name, value); SERIAL_EOL(); }while(0)
 
-#define SERIAL_ECHO_START()            serialprintPGM(echomagic)
-#define SERIAL_ECHO(x)                 SERIAL_PROTOCOL(x)
+#define SERIAL_ECHO(x)                 MYSERIAL0.print(x)
 #define SERIAL_ECHOPGM(x)              SERIAL_PROTOCOLPGM(x)
 #define SERIAL_ECHOLN(x)               SERIAL_PROTOCOLLN(x)
 #define SERIAL_ECHOLNPGM(x)            SERIAL_PROTOCOLLNPGM(x)
 #define SERIAL_ECHOPAIR(pre,value)     SERIAL_PROTOCOLPAIR(pre, value)
 #define SERIAL_ECHOLNPAIR(pre,value)   SERIAL_PROTOCOLLNPAIR(pre, value)
 #define SERIAL_ECHO_F(x,y)             SERIAL_PROTOCOL_F(x,y)
-
-#define SERIAL_ERROR_START()           serialprintPGM(errormagic)
-#define SERIAL_ERROR(x)                SERIAL_PROTOCOL(x)
-#define SERIAL_ERRORPGM(x)             SERIAL_PROTOCOLPGM(x)
-#define SERIAL_ERRORLN(x)              SERIAL_PROTOCOLLN(x)
-#define SERIAL_ERRORLNPGM(x)           SERIAL_PROTOCOLLNPGM(x)
 
 // These macros compensate for float imprecision
 #define SERIAL_PROTOCOLPAIR_F(pre, value)    SERIAL_PROTOCOLPAIR(pre, FIXFLOAT(value))
